@@ -37,6 +37,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px soli
 table{width:100%;border-collapse:collapse;font-size:.85rem}
 td,th{padding:6px 4px;text-align:right;border-bottom:1px solid var(--line)}th:first-child,td:first-child{text-align:left}
 svg{width:100%;height:auto;display:block}svg text{fill:var(--mute);font-size:9px}
+.chip{display:inline-block;min-width:30px;text-align:center;border-radius:8px;padding:1px 5px;margin:2px 1px;background:var(--line);font-weight:800}
+.chip.h{background:var(--blue);color:#fff}
+.rh{border-top:1px solid var(--line);padding:8px 0}.rh:first-child{border-top:0}
 .err{color:var(--red);min-height:1.4em}
 [hidden]{display:none!important}
 </style>
@@ -69,6 +72,10 @@ svg{width:100%;height:auto;display:block}svg text{fill:var(--mute);font-size:9px
     <div class="meter" id="meter"><i style="width:0"></i></div>
     <span class="sub">バー=平均一致数 / 赤線=無作為に選んだ場合(理論値 1.6)</span></div>
 
+  <h2>的中の記録(直近5回)</h2>
+  <div class="card"><table id="hsum"></table><div id="hist"></div>
+    <p class="sub" id="hnote"></p></div>
+
   <h2>流れ(直近10回)</h2>
   <div class="card"><svg id="trend" viewBox="0 0 320 130"></svg>
     <p class="sub" id="tnote"></p></div>
@@ -90,12 +97,12 @@ svg{width:100%;height:auto;display:block}svg text{fill:var(--mute);font-size:9px
 </section>
 </main>
 <script>
-const API = 'https://script.google.com/macros/s/AKfycbzdanpZgkfU0HxXUytffsmh7cJ3CzwjtcpoUxiShexJ6sWVGARhQ2j6_RBzaeI5SUbFhA/exec'; // GASのウェブアプリURL
+const API = 'https://script.google.com/macros/s/ここにデプロイURL/exec'; // GASのウェブアプリURL
 const WIN = 10; // 未出判定の直近回数
 const $ = s => document.querySelector(s);
 const TL = {stable:'安定',super_stable:'超安定',mid:'中間',reverse:'反転',strong:'強',slide:'スライド',magnet:'磁場'};
 const ORDER = [0,1,2,3,'F',4,5,6,7];
-let token = localStorage.b5token, mode = localStorage.b5mode || 'balanced', REC, ST, BT;
+let token = localStorage.b5token, mode = localStorage.b5mode || 'balanced', REC, ST, BT, HS;
 
 async function api(action, x = {}) {
   const r = await fetch(API, {method:'POST', body:JSON.stringify({a:action, t:token, window:WIN, ...x})});
@@ -121,6 +128,7 @@ async function start() {
     [REC, ST] = await Promise.all([api('recommend'), api('stats')]);
     if (REC.error || ST.error) { $('#meta').textContent = '履歴がありません。下の「当選結果の取り込み」から追加してください。'; return; }
     renderAll();
+    api('results').then(j => { HS = j; renderHist(); });
     BT = null; renderBT();
     BT = await api('backtest'); renderBT(); renderMeter();
   } catch(e) { if (e.message !== 'auth') $('#meta').textContent = '読み込みに失敗しました。再読み込みしてください'; }
@@ -167,6 +175,21 @@ function renderFreq() {
     return `<rect x="${x}" y="${108 - hh}" width="6.4" height="${hh}" fill="${missing.has(n) ? 'var(--red)' : 'var(--blue)'}" opacity="${Math.floor(i/5) % 2 ? .55 : 1}"/>`
       + (n % 5 === 0 || n === 1 ? `<text x="${x + 3}" y="122" text-anchor="middle">${n}</text>` : '');
   }).join('');
+}
+
+const MN = {stable:'安定型',balanced:'バランス型',explosive:'爆発型'};
+function renderHist() {
+  if (!HS || HS.error) { $('#hist').textContent = HS ? HS.error : ''; return; }
+  const S = HS.summary;
+  $('#hsum').innerHTML = '<tr><th>モード</th><th>的中数</th><th>的中率</th><th>ライン成立</th></tr>'
+    + Object.keys(MN).map(k => `<tr><td>${MN[k]}</td><td>${S[k].hits}/${S[k].rounds * 8}</td><td>${(S[k].hit_rate * 100).toFixed(1)}%</td><td>${S[k].line_rounds}/${S[k].rounds}回</td></tr>`).join('');
+  $('#hist').innerHTML = HS.list.map(x => `<div class="rh"><b>第${x.round}回</b> <span class="sub">${x.date} / ${x.src}</span><br>`
+    + `<span class="sub">当選 ${x.actual.join(' ')}</span>`
+    + Object.keys(MN).map(k => { const m = x.modes[k];
+        return `<div><span class="sub">${MN[k]} ${m.hits}個・${m.lines}ライン</span><br>`
+          + m.nums.map((n, i) => `<span class="chip${m.hit[i] ? ' h' : ''}">${n}</span>`).join('') + '</div>'; }).join('')
+    + '</div>').join('');
+  $('#hnote').textContent = `的中率=推奨8個のうち当選8個に含まれた割合(無作為なら20%)。青=的中。「記録」はその回の前に保存した予報、「再計算」は過去データから再現した予報です。第${HS.next}回の予報は${HS.next_saved ? '保存済みで、結果が出ると自動で照合されます' : 'まだ保存されていません'}。`;
 }
 
 function renderBT() {

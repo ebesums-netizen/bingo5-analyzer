@@ -40,6 +40,9 @@ svg{width:100%;height:auto;display:block}svg text{fill:var(--mute);font-size:9px
 .chip{display:inline-block;min-width:30px;text-align:center;border-radius:8px;padding:1px 5px;margin:2px 1px;background:var(--line);font-weight:800}
 .chip.h{background:var(--blue);color:#fff}
 .rh{border-top:1px solid var(--line);padding:8px 0}.rh:first-child{border-top:0}
+.hm{display:grid;grid-template-columns:repeat(5,1fr);gap:4px}
+.hc{border-radius:8px;text-align:center;padding:3px 0;color:#fff;font-weight:800;line-height:1.2}.hc small{display:block;font-weight:500;font-size:.62rem;opacity:.9}
+.hc.l2{color:#1a1a1a}.tk{font-size:.85rem;padding:3px 0;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
 .err{color:var(--red);min-height:1.4em}
 [hidden]{display:none!important}
 </style>
@@ -86,6 +89,19 @@ svg{width:100%;height:auto;display:block}svg text{fill:var(--mute);font-size:9px
   <h2>バックテスト(直近200回・各回は直前までのデータで推奨)</h2>
   <div class="card"><table id="bt"></table></div>
 
+  <h2>傾向の検定(偶然かどうか)</h2>
+  <div class="card"><table id="ts"></table>
+    <p class="sub" id="tnote2"></p></div>
+
+  <h2>盤面統計AI(列×ホット/コールド)</h2>
+  <div class="card"><div class="hm" id="hm"></div>
+    <div class="legend"><span><i class="dot" style="background:#e5484d"></i>超ホット</span><span><i class="dot" style="background:#f08a24"></i>ホット</span><span><i class="dot" style="background:#f2b705"></i>平均</span><span><i class="dot" style="background:#2f5bea"></i>コールド</span><span><i class="dot" style="background:#8b5cf6"></i>超コールド</span></div>
+    <p class="sub">色=直近50回の出現数(期待10回)との差。数字の下=総合スコア(0〜100)。</p><div id="cr" class="sub"></div></div>
+  <div class="card" style="margin-top:8px"><b>AI予想</b> <span class="sub" id="tkn"></span>
+    <div class="seg" id="rk"><button data-r="S">Sランク10口</button><button data-r="A">A 30口</button><button data-r="B">B 100口</button></div>
+    <div id="tk" style="max-height:340px;overflow:auto"></div>
+    <p class="sub">各口=8枠から1個ずつ。総合スコア=列31%・マス移動31%・周期19%・ホット/コールド19%。バックテスト表の「盤面AI」と無作為を比べてから参考にしてください。</p></div>
+
   <h2>当選結果の取り込み</h2>
   <div class="card">
     <p class="sub">「回,日付,8数字」を含む行を貼り付け(例: 460,2026-10-15,5,8,14,...)。取得済みの回は無視されます。</p>
@@ -102,7 +118,7 @@ const WIN = 10; // 未出判定の直近回数
 const $ = s => document.querySelector(s);
 const TL = {stable:'安定',super_stable:'超安定',mid:'中間',reverse:'反転',strong:'強',slide:'スライド',magnet:'磁場'};
 const ORDER = [0,1,2,3,'F',4,5,6,7];
-let token = localStorage.b5token, mode = localStorage.b5mode || 'balanced', REC, ST, BT, HS;
+let token = localStorage.b5token, mode = localStorage.b5mode || 'balanced', REC, ST, BT, HS, BD, TS, RK = 'S';
 
 async function api(action, x = {}) {
   const r = await fetch(API, {method:'POST', body:JSON.stringify({a:action, t:token, window:WIN, ...x})});
@@ -129,6 +145,8 @@ async function start() {
     if (REC.error || ST.error) { $('#meta').textContent = '履歴がありません。下の「当選結果の取り込み」から追加してください。'; return; }
     renderAll();
     api('results').then(j => { HS = j; renderHist(); });
+    api('test').then(j => { TS = j; renderTS(); });
+    api('board').then(j => { BD = j; renderAI(); });
     BT = null; renderBT();
     BT = await api('backtest'); renderBT(); renderMeter();
   } catch(e) { if (e.message !== 'auth') $('#meta').textContent = '読み込みに失敗しました。再読み込みしてください'; }
@@ -192,12 +210,34 @@ function renderHist() {
   $('#hnote').textContent = `的中率=推奨8個のうち当選8個に含まれた割合(無作為なら20%)。青=的中。「記録」はその回の前に保存した予報、「再計算」は過去データから再現した予報です。第${HS.next}回の予報は${HS.next_saved ? '保存済みで、結果が出ると自動で照合されます' : 'まだ保存されていません'}。`;
 }
 
+const HC = ['#e5484d','#f08a24','#f2b705','#2f5bea','#8b5cf6'];
+function renderAI() {
+  if (!BD || BD.error) { $('#hm').textContent = BD ? BD.error : ''; return; }
+  let g = BD.cols.map(c => `<b style="text-align:center">${c.name}</b>`).join('');
+  for (let k = 0; k < 8; k++) g += BD.cols.map(c => { const x = c.nums[k]; return `<div class="hc${x.lv === 2 ? ' l2' : ''}" style="background:${HC[x.lv]}">${x.n}<small>${x.score.toFixed(0)}</small></div>`; }).join('');
+  $('#hm').innerHTML = g;
+  $('#cr').innerHTML = BD.cols.map(c => { const s = c.nums.slice().sort((a, b) => b.z - a.z);
+    return `${c.name}列 ホット ${s.slice(0, 2).map(x => x.n).join('・')} / コールド ${s.slice(-2).map(x => x.n).join('・')} / 最長空き ${c.nums.slice().sort((a, b) => b.gap / b.avg - a.gap / a.avg)[0].n}`; }).join('<br>');
+  document.querySelectorAll('#rk button').forEach(b => b.setAttribute('aria-pressed', b.dataset.r === RK));
+  $('#tkn').textContent = `第${BD.next}回`;
+  $('#tk').innerHTML = BD.tickets.filter(t => t.rank === RK).map((t, i) => `<div class="tk">${i + 1}. ${t.numbers.map(n => String(n).padStart(2, '\u2007')).join(' ')} <span class="sub">${t.score}</span></div>`).join('');
+}
+document.querySelectorAll('#rk button').forEach(b => b.onclick = () => { RK = b.dataset.r; renderAI(); });
+
+const verdict = z => Math.abs(z) < 2 ? '偶然の範囲' : z > 0 ? '高め(要確認)' : '低め';
+function renderTS() {
+  if (!TS || TS.error) { $('#ts').innerHTML = TS ? `<tr><td>${TS.error}</td></tr>` : ''; return; }
+  $('#ts').innerHTML = '<tr><th>項目</th><th>平均</th><th>回数</th><th>z値</th><th>判定</th></tr>'
+    + TS.rows.map(r => `<tr><td>${r[0]}</td><td>${r[1].mean.toFixed(2)}</td><td>${r[1].n}</td><td>${r[1].z.toFixed(2)}</td><td>${verdict(r[1].z)}</td></tr>`).join('');
+  $('#tnote2').textContent = `平均=重複した数字の個数(偶然の期待値は1.6)。|z|が2未満なら偶然の範囲です。複数の項目を同時に見ているため、2を少し超えただけでは確かとは言えません(3を超えて続くかが目安)。前回(第${TS.round}回)の数字: ${TS.last.join(' ')}`;
+}
+
 function renderBT() {
-  const name = {stable:'安定型',balanced:'バランス型',explosive:'爆発型',random:'無作為'};
+  const name = {stable:'安定型',balanced:'バランス型',explosive:'爆発型',ai:'盤面AI',random:'無作為'};
   if (!BT) { $('#bt').innerHTML = '<tr><td>計算中…</td></tr>'; return; }
   if (BT.error) { $('#bt').innerHTML = `<tr><td>${BT.error}</td></tr>`; return; }
-  $('#bt').innerHTML = '<tr><th>モード</th><th>平均一致</th><th>平均ライン</th><th>1ライン+</th><th>2ライン+</th><th>最大</th></tr>'
-    + BT.results.map(r => `<tr><td>${name[r.mode]}</td><td>${r.avg_hits.toFixed(2)}</td><td>${r.avg_lines.toFixed(3)}</td><td>${(r.rate1*100).toFixed(1)}%</td><td>${(r.rate2*100).toFixed(1)}%</td><td>${r.max_lines}</td></tr>`).join('');
+  $('#bt').innerHTML = '<tr><th>モード</th><th>平均一致</th><th>平均ライン</th><th>1ライン+</th><th>2ライン+</th><th>最大</th><th>判定</th></tr>'
+    + BT.results.map(r => `<tr><td>${name[r.mode]}</td><td>${r.avg_hits.toFixed(2)}</td><td>${r.avg_lines.toFixed(3)}</td><td>${(r.rate1*100).toFixed(1)}%</td><td>${(r.rate2*100).toFixed(1)}%</td><td>${r.max_lines}</td><td>${r.mode === 'random' ? '-' : verdict(r.z)}</td></tr>`).join('');
 }
 
 $('#ibtn').onclick = async () => {

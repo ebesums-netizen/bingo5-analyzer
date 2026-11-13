@@ -62,7 +62,7 @@ svg{width:100%;height:auto;display:block}svg text{fill:var(--mute);font-size:9px
   <h1 id="title">ビンゴ5予報</h1>
   <p class="sub" id="meta"></p>
   <div class="seg" id="seg" role="group" aria-label="モード">
-    <button data-m="stable">安定型</button><button data-m="balanced">バランス型</button><button data-m="explosive">爆発型</button>
+    <button data-m="stable">安定型</button><button data-m="balanced">バランス型</button><button data-m="explosive">爆発型</button><button data-m="ai">AI型</button>
   </div>
   <div class="board" id="board"></div>
   <div class="legend">
@@ -71,6 +71,7 @@ svg{width:100%;height:auto;display:block}svg text{fill:var(--mute);font-size:9px
     <span><i class="dot" style="background:var(--yel)"></i>隣接</span>
     <span><i class="dot" style="background:var(--sub)"></i>次点強数字</span>
   </div>
+  <p class="sub" id="mnote"></p>
   <div class="card"><b>精度メーター</b> <span class="sub" id="mlabel">バックテスト計算中…</span>
     <div class="meter" id="meter"><i style="width:0"></i></div>
     <span class="sub">バー=平均一致数 / 赤線=無作為に選んだ場合(理論値 1.6)</span></div>
@@ -163,8 +164,9 @@ document.querySelectorAll('#seg button').forEach(b => b.onclick = () => { mode =
 // ブロック性格マップ(ビンゴ盤面: 0 1 2 / 3 FREE 4 / 5 6 7)
 function renderBoard() {
   const list = REC.modes[mode];
+  $('#mnote').textContent = mode === 'ai' ? 'AI型=総合スコア(列・マス移動・周期・ホット/コールド)が各枠で最上位の数字。的中しやすさを保証するものではありません。' : '';
   $('#board').innerHTML = ORDER.map(k => k === 'F'
-    ? `<div class="free"><b>第${REC.next}回</b><small>${{stable:'安定型',balanced:'バランス型',explosive:'爆発型'}[mode]}</small></div>`
+    ? `<div class="free"><b>第${REC.next}回</b><small>${{stable:'安定型',balanced:'バランス型',explosive:'爆発型',ai:'AI型'}[mode]}</small></div>`
     : (c => `<div class="cell ${c.tag}"><div class="ball">${c.n}</div><small>${k*5+1}〜${k*5+5}</small><small>${TL[c.type]}枠</small></div>`)(list[k])).join('');
 }
 
@@ -195,7 +197,7 @@ function renderFreq() {
   }).join('');
 }
 
-const MN = {stable:'安定型',balanced:'バランス型',explosive:'爆発型'};
+const MN = {stable:'安定型',balanced:'バランス型',explosive:'爆発型',ai:'AI型'};
 function renderHist() {
   if (!HS || HS.error) { $('#hist').textContent = HS ? HS.error : ''; return; }
   const S = HS.summary;
